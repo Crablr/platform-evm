@@ -1,0 +1,12 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+fs_permissions = [{ access = "read", path = "./broadcast"}, { access = "read", path = "./out"}]
+solc = "0.8.30"
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 10000
+always_use_create_2_factory = true
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
