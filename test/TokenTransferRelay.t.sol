@@ -27,36 +27,43 @@ contract BaseTransferRelayTest is Test {
         vm.stopPrank();
     }
 
-    function reserveNativeTransfer(string memory uid, uint256 nativeAmount) public {
-        (bytes memory signature, uint40 expiration) = generateNativeSignature(uid, nativeAmount);
-        relay.reserveNativeTransfer{value: nativeAmount}(uid, signature, expiration, operator);
+    function reserveNativeTransfer(string memory uid, uint8 chargeId, uint256 nativeAmount) public {
+        (bytes memory signature, uint40 expiration) = generateNativeSignature(uid, chargeId, nativeAmount);
+        relay.reserveNativeTransfer{value: nativeAmount}(uid, chargeId, signature, expiration, operator);
     }
 
-    function reserveErc20Transfer(string memory uid, address erc20Address, uint256 erc20Amount) public {
-        (bytes memory signature, uint40 expiration) = generateErc20Signature(uid, erc20Address, erc20Amount);
-        relay.reserveErc20Transfer(uid, erc20Address, erc20Amount, signature, expiration, operator);
+    function reserveErc20Transfer(string memory uid, uint8 chargeId, address erc20Address, uint256 erc20Amount)
+        public
+    {
+        (bytes memory signature, uint40 expiration) = generateErc20Signature(uid, chargeId, erc20Address, erc20Amount);
+        relay.reserveErc20Transfer(uid, chargeId, erc20Address, erc20Amount, signature, expiration, operator);
     }
 
-    function generateNativeSignature(string memory uid, uint256 nativeAmount)
+    function generateNativeSignature(string memory uid, uint8 chargeId, uint256 nativeAmount)
         public
         view
         returns (bytes memory signature, uint40 expiration)
     {
-        return generateCustomSignature(operatorKey, uint40(block.timestamp + 1 days), uid, address(0), nativeAmount);
+        return generateCustomSignature(
+            operatorKey, uint40(block.timestamp + 1 days), uid, chargeId, address(0), nativeAmount
+        );
     }
 
-    function generateErc20Signature(string memory uid, address erc20Address, uint256 erc20Amount)
+    function generateErc20Signature(string memory uid, uint8 chargeId, address erc20Address, uint256 erc20Amount)
         public
         view
         returns (bytes memory signature, uint40 expiration)
     {
-        return generateCustomSignature(operatorKey, uint40(block.timestamp + 1 days), uid, erc20Address, erc20Amount);
+        return generateCustomSignature(
+            operatorKey, uint40(block.timestamp + 1 days), uid, chargeId, erc20Address, erc20Amount
+        );
     }
 
     function generateCustomSignature(
         uint256 operatorKey_,
         uint40 expiration,
         string memory uid,
+        uint8 chargeId,
         address tokenAddress,
         uint256 tokenAmount
     ) public view returns (bytes memory signature, uint40) {
@@ -64,7 +71,9 @@ contract BaseTransferRelayTest is Test {
 
         bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(
             keccak256(
-                abi.encodePacked(operator_, expiration, block.chainid, address(relay), uid, tokenAddress, tokenAmount)
+                abi.encodePacked(
+                    operator_, expiration, block.chainid, address(relay), uid, chargeId, tokenAddress, tokenAmount
+                )
             )
         );
 
@@ -82,8 +91,8 @@ contract NativeTransferRelayTest is BaseTransferRelayTest {
         vm.startPrank(payer);
 
         vm.expectEmit();
-        emit TokenTransferRelay.TransferReserved("NATIVE_UID", payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount);
+        emit TokenTransferRelay.TransferReserved("NATIVE_UID", 0);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount);
 
         assertTrue(relay.isTransferReserved("NATIVE_UID"));
         assertEq(address(relay).balance, nativeAmount);
@@ -96,11 +105,12 @@ contract NativeTransferRelayTest is BaseTransferRelayTest {
 
     function test_ExecuteNativeTransfer(address receiver, uint256 nativeAmount) public {
         vm.assume(nativeAmount > 0);
-        vm.assume(receiver > address(0x0ff) && receiver != address(relay));
+        vm.assume(receiver > address(0x0ff) && receiver != address(relay) && payer != receiver);
+        vm.assume(receiver.balance == 0);
         deal(payer, nativeAmount);
 
         vm.prank(payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount);
 
         vm.prank(operator);
         vm.expectEmit();
@@ -118,7 +128,7 @@ contract NativeTransferRelayTest is BaseTransferRelayTest {
         deal(payer, nativeAmount);
 
         vm.prank(payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount);
 
         vm.prank(operator);
         vm.expectEmit();
@@ -135,10 +145,10 @@ contract NativeTransferRelayTest is BaseTransferRelayTest {
         vm.assume(nativeAmount > 10);
         deal(payer, nativeAmount);
         vm.startPrank(payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount - 10);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount - 10);
 
         vm.expectRevert("TokenTransferRelay: Transfer already reserved");
-        reserveNativeTransfer("NATIVE_UID", 10);
+        reserveNativeTransfer("NATIVE_UID", 0, 10);
         vm.stopPrank();
     }
 }
@@ -150,8 +160,8 @@ contract Erc20TransferRelayTest is BaseTransferRelayTest {
         vm.startPrank(payer);
 
         vm.expectEmit();
-        emit TokenTransferRelay.TransferReserved("ERC20_UID", payer);
-        reserveErc20Transfer("ERC20_UID", address(token), erc20Amount);
+        emit TokenTransferRelay.TransferReserved("ERC20_UID", 0);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), erc20Amount);
 
         assertTrue(relay.isTransferReserved("ERC20_UID"));
         assertEq(token.balanceOf(address(relay)), erc20Amount);
@@ -165,11 +175,12 @@ contract Erc20TransferRelayTest is BaseTransferRelayTest {
 
     function test_ExecuteErc20Transfer(address receiver, uint256 erc20Amount) public {
         vm.assume(erc20Amount > 0);
-        vm.assume(receiver > address(0x0ff));
+        vm.assume(receiver > address(0x0ff) && receiver != address(relay) && payer != receiver);
+        vm.assume(token.balanceOf(receiver) == 0);
         deal(address(token), payer, erc20Amount);
 
         vm.prank(payer);
-        reserveErc20Transfer("ERC20_UID", address(token), erc20Amount);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), erc20Amount);
 
         vm.prank(operator);
         vm.expectEmit();
@@ -187,7 +198,7 @@ contract Erc20TransferRelayTest is BaseTransferRelayTest {
         deal(address(token), payer, erc20Amount);
 
         vm.prank(payer);
-        reserveErc20Transfer("ERC20_UID", address(token), erc20Amount);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), erc20Amount);
 
         vm.prank(operator);
         vm.expectEmit();
@@ -205,10 +216,10 @@ contract Erc20TransferRelayTest is BaseTransferRelayTest {
         deal(address(token), payer, erc20Amount);
 
         vm.startPrank(payer);
-        reserveErc20Transfer("ERC20_UID", address(token), erc20Amount - 10);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), erc20Amount - 10);
 
         vm.expectRevert("TokenTransferRelay: Transfer already reserved");
-        reserveErc20Transfer("ERC20_UID", address(token), 10);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), 10);
         vm.stopPrank();
     }
 }
@@ -226,30 +237,23 @@ contract BatchTransferTest is BaseTransferRelayTest {
 
         vm.startPrank(payer);
         // Reserve native transfer
-        reserveNativeTransfer("NATIVE_BATCH", nativeAmount);
+        reserveNativeTransfer("NATIVE_BATCH", 0, nativeAmount);
         // Reserve ERC20 transfer
-        reserveErc20Transfer("ERC20_BATCH", address(token), erc20Amount);
+        reserveErc20Transfer("ERC20_BATCH", 0, address(token), erc20Amount);
         vm.stopPrank();
 
         // Prepare batch parameters
-        bool[] memory isNative = new bool[](2);
-        string[] memory uids = new string[](2);
-        address[] memory receivers = new address[](2);
-
-        isNative[0] = true;
-        isNative[1] = false;
-        uids[0] = "NATIVE_BATCH";
-        uids[1] = "ERC20_BATCH";
-        receivers[0] = receiver1;
-        receivers[1] = receiver2;
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(relay.executeNativeTransfer.selector, "NATIVE_BATCH", receiver1);
+        calls[1] = abi.encodeWithSelector(relay.executeErc20Transfer.selector, "ERC20_BATCH", receiver2);
 
         // Execute batch
         vm.prank(operator);
-        bool[] memory results = relay.batchExecuteTransfer(isNative, uids, receivers);
+        bytes[] memory results = relay.multicall(calls);
 
         // Verify results
-        assertTrue(results[0]); // Native transfer success
-        assertTrue(results[1]); // ERC20 transfer success
+        assertTrue(abi.decode(results[0], (bool))); // Native transfer success
+        assertTrue(abi.decode(results[1], (bool))); // ERC20 transfer success
 
         // Check final balances
         assertEq(receiver1.balance, nativeAmount);
@@ -265,39 +269,28 @@ contract BatchTransferTest is BaseTransferRelayTest {
         // Setup and reserve only one transfer
         deal(payer, nativeAmount);
         vm.prank(payer);
-        reserveNativeTransfer("NATIVE_BATCH", nativeAmount);
+        reserveNativeTransfer("NATIVE_BATCH", 0, nativeAmount);
 
         // Prepare batch with one valid and one invalid UID
-        bool[] memory isNative = new bool[](2);
-        string[] memory uids = new string[](2);
-        address[] memory receivers = new address[](2);
-
-        isNative[0] = true;
-        isNative[1] = true;
-        uids[0] = "NATIVE_BATCH";
-        uids[1] = "INVALID_UID"; // This doesn't exist
-        receivers[0] = receiver;
-        receivers[1] = receiver;
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(relay.executeNativeTransfer.selector, "NATIVE_BATCH", receiver);
+        calls[1] = abi.encodeWithSelector(relay.executeNativeTransfer.selector, "INVALID_UID", receiver);
 
         // Execute batch
         vm.prank(operator);
-        bool[] memory results = relay.batchExecuteTransfer(isNative, uids, receivers);
+        bytes[] memory results = relay.multicall(calls);
 
         // Verify results
-        assertTrue(results[0]); // First transfer should succeed
-        assertFalse(results[1]); // Second transfer should fail
+        assertTrue(abi.decode(results[0], (bool))); // First transfer should succeed
+        assertFalse(abi.decode(results[1], (bool))); // Second transfer should fail
 
         // Check that first transfer was processed
         assertEq(receiver.balance, nativeAmount);
     }
 
     function test_BatchExecuteEmptyArray() public {
-        bool[] memory isNative = new bool[](0);
-        string[] memory uids = new string[](0);
-        address[] memory receivers = new address[](0);
-
         vm.prank(operator);
-        bool[] memory results = relay.batchExecuteTransfer(isNative, uids, receivers);
+        bytes[] memory results = relay.multicall(new bytes[](0));
 
         assertEq(results.length, 0);
     }
@@ -308,7 +301,7 @@ contract TransferRelayOperatorTest is BaseTransferRelayTest {
         vm.assume(nativeAmount > 0);
         deal(payer, nativeAmount);
         vm.prank(payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount);
 
         vm.startPrank(makeAddr("nonOperator"));
         vm.expectRevert(
@@ -326,7 +319,7 @@ contract TransferRelayOperatorTest is BaseTransferRelayTest {
         vm.assume(erc20Amount > 0);
         deal(address(token), payer, erc20Amount);
         vm.prank(payer);
-        reserveErc20Transfer("ERC20_UID", address(token), erc20Amount);
+        reserveErc20Transfer("ERC20_UID", 0, address(token), erc20Amount);
 
         vm.startPrank(makeAddr("nonOperator"));
         vm.expectRevert(
@@ -341,9 +334,8 @@ contract TransferRelayOperatorTest is BaseTransferRelayTest {
     }
 
     function test_RevertNonOperatorBatch() public {
-        bool[] memory isNative = new bool[](1);
-        string[] memory uids = new string[](1);
-        address[] memory receivers = new address[](1);
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = abi.encodeWithSelector(relay.executeNativeTransfer.selector, "", address(0));
 
         vm.startPrank(makeAddr("nonOperator"));
         vm.expectRevert(
@@ -353,7 +345,7 @@ contract TransferRelayOperatorTest is BaseTransferRelayTest {
                 relay.AUTHORITY_ROLE()
             )
         );
-        relay.batchExecuteTransfer(isNative, uids, receivers);
+        relay.multicall(calls);
         vm.stopPrank();
     }
 }
@@ -365,12 +357,12 @@ contract TransferRelaySignatureTest is BaseTransferRelayTest {
         address nonOperator = vm.addr(nonOperatorKey);
 
         (bytes memory signature, uint40 expiration) =
-            generateCustomSignature(nonOperatorKey, uint40(block.timestamp + 1 days), uid, address(0), 1 ether);
+            generateCustomSignature(nonOperatorKey, uint40(block.timestamp + 1 days), uid, 0, address(0), 1 ether);
 
         deal(payer, 1 ether);
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Missing role AUTHORITY_ROLE for authorizer");
-        relay.reserveNativeTransfer{value: 1 ether}(uid, signature, expiration, nonOperator);
+        relay.reserveNativeTransfer{value: 1 ether}(uid, 0, signature, expiration, nonOperator);
     }
 
     function test_RevertIfNotOperatorErc20() public {
@@ -379,24 +371,24 @@ contract TransferRelaySignatureTest is BaseTransferRelayTest {
         address nonOperator = vm.addr(nonOperatorKey);
 
         (bytes memory signature, uint40 expiration) =
-            generateCustomSignature(nonOperatorKey, uint40(block.timestamp + 1 days), uid, address(token), 100);
+            generateCustomSignature(nonOperatorKey, uint40(block.timestamp + 1 days), uid, 0, address(token), 100);
 
         deal(address(token), payer, 100);
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Missing role AUTHORITY_ROLE for authorizer");
-        relay.reserveErc20Transfer(uid, address(token), 100, signature, expiration, nonOperator);
+        relay.reserveErc20Transfer(uid, 0, address(token), 100, signature, expiration, nonOperator);
     }
 
     function test_RevertIfExpiredNative() public {
         string memory uid = "NATIVE_UID";
         uint40 expiredTimestamp = uint40(block.timestamp - 1);
 
-        (bytes memory signature,) = generateCustomSignature(operatorKey, expiredTimestamp, uid, address(0), 1 ether);
+        (bytes memory signature,) = generateCustomSignature(operatorKey, expiredTimestamp, uid, 0, address(0), 1 ether);
 
         deal(payer, 1 ether);
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Signature expired");
-        relay.reserveNativeTransfer{value: 1 ether}(uid, signature, expiredTimestamp, operator);
+        relay.reserveNativeTransfer{value: 1 ether}(uid, 0, signature, expiredTimestamp, operator);
     }
 
     function test_RevertIfWrongAmountNative() public {
@@ -404,12 +396,12 @@ contract TransferRelaySignatureTest is BaseTransferRelayTest {
         uint256 signedAmount = 1 ether;
         uint256 sentAmount = 2 ether;
 
-        (bytes memory signature, uint40 expiration) = generateNativeSignature(uid, signedAmount);
+        (bytes memory signature, uint40 expiration) = generateNativeSignature(uid, 0, signedAmount);
 
         deal(payer, sentAmount);
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Invalid Signature");
-        relay.reserveNativeTransfer{value: sentAmount}(uid, signature, expiration, operator);
+        relay.reserveNativeTransfer{value: sentAmount}(uid, 0, signature, expiration, operator);
     }
 
     function test_RevertIfWrongAmountErc20() public {
@@ -417,25 +409,25 @@ contract TransferRelaySignatureTest is BaseTransferRelayTest {
         uint256 signedAmount = 100;
         uint256 sentAmount = 200;
 
-        (bytes memory signature, uint40 expiration) = generateErc20Signature(uid, address(token), signedAmount);
+        (bytes memory signature, uint40 expiration) = generateErc20Signature(uid, 0, address(token), signedAmount);
 
         deal(address(token), payer, sentAmount);
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Invalid Signature");
-        relay.reserveErc20Transfer(uid, address(token), sentAmount, signature, expiration, operator);
+        relay.reserveErc20Transfer(uid, 0, address(token), sentAmount, signature, expiration, operator);
     }
 
     function test_RevertProcessedTransfer(uint256 nativeAmount) public {
         vm.assume(nativeAmount > 10);
         deal(payer, nativeAmount);
         vm.prank(payer);
-        reserveNativeTransfer("NATIVE_UID", nativeAmount - 10);
+        reserveNativeTransfer("NATIVE_UID", 0, nativeAmount - 10);
 
         vm.prank(operator);
         relay.executeNativeTransfer("NATIVE_UID", makeAddr("receiver"));
 
         vm.prank(payer);
         vm.expectRevert("TokenTransferRelay: Transfer already processed");
-        reserveNativeTransfer("NATIVE_UID", 10);
+        reserveNativeTransfer("NATIVE_UID", 0, 10);
     }
 }

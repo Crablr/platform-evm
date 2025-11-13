@@ -43,17 +43,6 @@ export const TokenTransferRelayAbi = [
   },
   {
     type: "function",
-    name: "batchExecuteTransfer",
-    inputs: [
-      { name: "isNative", type: "bool[]", internalType: "bool[]" },
-      { name: "uids", type: "string[]", internalType: "string[]" },
-      { name: "receivers", type: "address[]", internalType: "address[]" },
-    ],
-    outputs: [{ name: "", type: "bool[]", internalType: "bool[]" }],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
     name: "executeErc20Transfer",
     inputs: [
       { name: "uid", type: "string", internalType: "string" },
@@ -164,6 +153,13 @@ export const TokenTransferRelayAbi = [
   },
   {
     type: "function",
+    name: "multicall",
+    inputs: [{ name: "data", type: "bytes[]", internalType: "bytes[]" }],
+    outputs: [{ name: "results", type: "bytes[]", internalType: "bytes[]" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "renounceRole",
     inputs: [
       { name: "role", type: "bytes32", internalType: "bytes32" },
@@ -177,6 +173,7 @@ export const TokenTransferRelayAbi = [
     name: "reserveErc20Transfer",
     inputs: [
       { name: "uid", type: "string", internalType: "string" },
+      { name: "chargeId", type: "uint8", internalType: "uint8" },
       { name: "erc20Address", type: "address", internalType: "address" },
       { name: "erc20Amount", type: "uint256", internalType: "uint256" },
       { name: "signature", type: "bytes", internalType: "bytes" },
@@ -191,6 +188,7 @@ export const TokenTransferRelayAbi = [
     name: "reserveNativeTransfer",
     inputs: [
       { name: "uid", type: "string", internalType: "string" },
+      { name: "chargeId", type: "uint8", internalType: "uint8" },
       { name: "signature", type: "bytes", internalType: "bytes" },
       { name: "expiration", type: "uint40", internalType: "uint40" },
       { name: "authorizer", type: "address", internalType: "address" },
@@ -309,10 +307,10 @@ export const TokenTransferRelayAbi = [
     inputs: [
       { name: "uid", type: "string", indexed: true, internalType: "string" },
       {
-        name: "from",
-        type: "address",
+        name: "chargeId",
+        type: "uint8",
         indexed: false,
-        internalType: "address",
+        internalType: "uint8",
       },
     ],
     anonymous: false,
@@ -334,7 +332,12 @@ export const TokenTransferRelayAbi = [
       { name: "neededRole", type: "bytes32", internalType: "bytes32" },
     ],
   },
-  { type: "error", name: "ReentrancyGuardReentrantCall", inputs: [] },
+  {
+    type: "error",
+    name: "AddressEmptyCode",
+    inputs: [{ name: "target", type: "address", internalType: "address" }],
+  },
+  { type: "error", name: "FailedCall", inputs: [] },
   {
     type: "error",
     name: "SafeERC20FailedOperation",
